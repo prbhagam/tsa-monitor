@@ -1,0 +1,9 @@
+.env
+email_preview.html
+monitor.log
+# NOTE: state.json IS tracked — the GitHub Actions workflow persists it between runs.
+launchd.out.log
+launchd.err.log
+venv/
+__pycache__/
+*.pyc

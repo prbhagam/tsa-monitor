@@ -1,0 +1,64 @@
+# Render Blueprint: deploys the monitor as a free web service.
+# cron-job.org pings <service-url>/run on a schedule; this service does the work.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: tsa-monitor
+    runtime: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    # Single worker so the in-process lock actually serializes runs.
+    startCommand: gunicorn app:app --workers 1 --timeout 120 --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+
+      # --- Secrets: set these in the Render dashboard (sync:false = not in git) ---
+      - key: SENDER_EMAIL
+        sync: false
+      - key: RECIPIENT_EMAIL
+        sync: false
+      # Brevo HTTPS email API: Render blocks outbound SMTP, so mail goes via Brevo.
+      # SENDER_EMAIL must be a verified sender in your Brevo account.
+      - key: BREVO_API_KEY
+        sync: false
+      # GitHub PAT with Contents:read+write on this repo (for state persistence).
+      - key: GITHUB_TOKEN
+        sync: false
+
+      # Shared secret cron-job.org must send as the X-Run-Token header.
+      # Render generates a strong value; copy it from the dashboard into cron-job.org.
+      - key: RUN_TOKEN
+        generateValue: true
+
+      # --- State storage (GitHub-backed) ---
+      - key: GITHUB_REPO
+        value: prbhagam/tsa-monitor
+      - key: STATE_BRANCH
+        value: monitor-state
+
+      # --- Email backend ---
+      - key: EMAIL_BACKEND
+        value: brevo          # use Brevo's HTTP API (Render blocks SMTP)
+      - key: SENDER_NAME
+        value: TSA NTC2026 Monitor
+
+      # --- Non-secret monitor config (edit here to change what's tracked) ---
+      # SMTP_* only used when EMAIL_BACKEND=smtp (e.g. local runs).
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: TIER1_URL
+        value: https://tsamembership.registermychapter.com/tier1winners/ntc2026
+      - key: SEMIFINALIST_URL
+        value: https://tsamembership.registermychapter.com/semifinalists/ntc2026
+      - key: TEAM_ID
+        value: "1211"
+      # Tracked roster (names + IDs) — kept out of the public repo; set in the
+      # Render dashboard. Format: "id:Name,id:Name,...".
+      - key: STUDENTS
+        sync: false
+      - key: DIVISIONS
+        value: HS

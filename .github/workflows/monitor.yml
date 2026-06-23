@@ -1,0 +1,62 @@
+name: TSA results monitor
+
+on:
+  # Scheduling moved to cron-job.org -> Render (lower latency). The schedule
+  # below is disabled to avoid duplicate emails; re-enable it as a fallback if
+  # the Render service is down. Manual runs remain available.
+  # schedule:
+  #   - cron: "3,13,23,33,43,53 * * * *"
+  workflow_dispatch: {}   # manual "Run workflow" button
+
+# Allow the job to commit the updated state file back to the repo.
+permissions:
+  contents: write
+
+# Never run two checks at once (they'd race on state.json).
+concurrency:
+  group: tsa-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      # --- Secrets (set via: gh secret set ...) ---
+      SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+      SENDER_APP_PASSWORD: ${{ secrets.SENDER_APP_PASSWORD }}
+      RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+      # Tracked roster (names + IDs) — kept out of the public repo. Set with:
+      #   gh secret set STUDENTS --repo <owner/repo>   # value: "id:Name,id:Name,..."
+      STUDENTS: ${{ secrets.STUDENTS }}
+      # --- Non-secret config (edit here to change what's tracked) ---
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: "587"
+      TIER1_URL: https://tsamembership.registermychapter.com/tier1winners/ntc2026
+      SEMIFINALIST_URL: https://tsamembership.registermychapter.com/semifinalists/ntc2026
+      TEAM_ID: "1211"
+      DIVISIONS: HS
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run monitor
+        run: python tsa_monitor.py
+
+      - name: Persist state
+        run: |
+          if [[ -n "$(git status --porcelain state.json)" ]]; then
+            git config user.name  "tsa-monitor-bot"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add state.json
+            git commit -m "Update results state [skip ci]"
+            git push
+          else
+            echo "No state change."
+          fi
